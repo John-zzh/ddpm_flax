@@ -12,7 +12,7 @@ from diffusion import SimpleDiffusion, forward_diffusion
 from unet import UNet
 from typing import Iterator
 from image_process import image_generator
-
+import argparse
 print(jax.devices())
 
 WORKING_DIR="./"
