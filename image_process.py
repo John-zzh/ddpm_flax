@@ -5,24 +5,24 @@ from typing import Iterator
 import numpy as np
 import jax.numpy as jnp
 
-def load_image(image_path, size):
+def load_image(image_path, size=None):
     """加载图片，调整尺寸，并转换为numpy数组
              [0, 255] -> [-1, 1]
     """
     with Image.open(image_path) as img:
-        img_resized = img.resize(size)
-        img_array = (np.array(img_resized)/255.0 - 0.5)*2
+        if size:
+            img = img.resize(size)
+        img_array = (np.array(img)/255.0 - 0.5)*2
         return img_array
 
-def load_images(directory_path, size=(32, 32)):
-    """加载目录中所有图片并转换为具有统一尺寸的numpy数组的列表"""
-    image_arrays = []
-    for filename in os.listdir(directory_path):
-        if filename.endswith('.jpg') or filename.endswith('.png'):  # 根据需要添加其他图片格式
-            file_path = os.path.join(directory_path, filename)
-            image_arrays.append(load_image(file_path, size=size))
-    return np.stack(image_arrays)  # 使用 np.stack 确保能够正确地形成一个多维数组
-
+# def load_images(directory_path, size=(32, 32)):
+#     """加载目录中所有图片并转换为具有统一尺寸的numpy数组的列表"""
+#     image_arrays = []
+#     for filename in os.listdir(directory_path):
+#         if filename.endswith('.jpg') or filename.endswith('.png'):  # 根据需要添加其他图片格式
+#             file_path = os.path.join(directory_path, filename)
+#             image_arrays.append(load_image(file_path, size=size))
+#     return np.stack(image_arrays)  # 使用 np.stack 确保能够正确地形成一个多维数组
 
 def image_generator(directory_path, size=(32, 32), batch_size=20, num_files_limit=None) -> Iterator[jnp.ndarray]:
     filenames = [f for f in os.listdir(directory_path) if f.endswith('.jpg') or f.endswith('.png')]
@@ -35,7 +35,7 @@ def image_generator(directory_path, size=(32, 32), batch_size=20, num_files_limi
         for _ in range(1000):
             for i in range(0, num_files, batch_size):
                 batch_filenames = filenames[i:i + batch_size]
-                batch_images = [load_image(os.path.join(directory_path, f), size) for f in batch_filenames]
+                batch_images = [load_image(os.path.join(directory_path, f), size=None) for f in batch_filenames]
                 yield jnp.stack(batch_images)
     return finite_generator()
 

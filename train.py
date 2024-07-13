@@ -15,7 +15,22 @@ from image_process import image_generator
 
 print(jax.devices())
 
-WORKING_DIR="/home/jowsl/ddpm/jax_flax_ddpm"
+WORKING_DIR="./"
+
+def gen_args():
+    def str2bool(str):
+        if str.lower() in ('yes', 'true', 't', 'y', '1'):
+            return True
+        elif str.lower() in ('no', 'false', 'f', 'n', '0'):
+            return False
+        else:
+            raise argparse.ArgumentTypeError('Unsupported value encountered.')
+    parser = argparse.ArgumentParser(description='Davidson')
+    parser.add_argument('--epoch',       type=int,   default=3,  help='number of epochs')
+    parser.add_argument('--batch_size',  type=int,   default=50,  help='batch_size')
+
+    args = parser.parse_args()
+    return args
 
 @dataclass
 class ModelConfig:
@@ -30,8 +45,8 @@ class TrainingConfig:
     TIMESTEPS = 1000 # Define number of diffusion timesteps
     IMG_SHAPE = (32, 32, 3) 
     # NUM_EPOCHS = 800
-    NUM_EPOCHS = 3
-    BATCH_SIZE = 50
+    NUM_EPOCHS = args.epoch
+    BATCH_SIZE = args.batch_size
     LR = 2e-4
     NUM_WORKERS = 2
 
@@ -112,10 +127,6 @@ def train_one_epoch(simple_diffusion_obj: SimpleDiffusion, loader: Iterator[np.n
     print('mean_loss', mean_loss)
     return state, mean_loss
 
-
-directory_path = '/home/jowsl/ddpm/archive/flowers/sunflower'  
-# dataset = image_generator(directory_path)
-
 def train():
     init_rng = jax.random.PRNGKey(0)
     state = create_train_state(rng=init_rng, 
@@ -123,13 +134,12 @@ def train():
                                learning_rate=0.001, # Example learning rate
                                input_shape=(32,32,3))  
     del init_rng
-    # num_files = len([f for f in os.listdir(directory_path) if f.endswith('.jpg') or f.endswith('.png')])
-    # print('num_files', num_files)
-    num_files = 50
+
+    num_files = 733
     batches_per_epoch = num_files // TrainingConfig.BATCH_SIZE
     print('batches_per_epoch', batches_per_epoch)
     mean_loss_record = []
-    dataset = image_generator(directory_path, batch_size=TrainingConfig.BATCH_SIZE, num_files_limit=50)
+    dataset = image_generator(f'{WORKING_DIR}/train_set', batch_size=TrainingConfig.BATCH_SIZE, num_files_limit=None)
     for epoch in tqdm(range(TrainingConfig.NUM_EPOCHS), desc='Training Epochs'):
         print('===================== epoch =',epoch)
         state, mean_loss = train_one_epoch(
@@ -143,7 +153,6 @@ def train():
         if epoch:
             # 每100个epoch保存模型参数
             params = state.params
-            print('params', params)
             save_path = os.path.join(f'{WORKING_DIR}/log', f"{epoch}.flax")
             with open(save_path, 'wb') as f:
                 f.write(flax.serialization.to_bytes(params))
@@ -151,10 +160,5 @@ def train():
 
 if __name__ == '__main__':
     state = train()
-
-
-
-# %% [markdown]
-# 
 
 
