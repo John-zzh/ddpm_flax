@@ -32,6 +32,8 @@ def gen_args():
     args = parser.parse_args()
     return args
 
+args =  gen_args()
+
 @dataclass
 class ModelConfig:
     BASE_CH = 64  # 64, 128, 256, 256
