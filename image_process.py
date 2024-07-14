@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from typing import Iterator
 import numpy as np
 import jax.numpy as jnp
+import random
 
 def load_image(image_path, size=None):
     """加载图片，调整尺寸，并转换为numpy数组
@@ -33,6 +34,7 @@ def image_generator(directory_path, size=(32, 32), batch_size=20, num_files_limi
 
     def finite_generator():
         for _ in range(1000):
+            random.shuffle(filenames)  # 打乱文件名的顺序
             for i in range(0, num_files, batch_size):
                 batch_filenames = filenames[i:i + batch_size]
                 batch_images = [load_image(os.path.join(directory_path, f), size=None) for f in batch_filenames]

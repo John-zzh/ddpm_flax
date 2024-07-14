@@ -93,5 +93,4 @@ inferred_images = reverse_diffusion(model=model,
 
 print('inferred_images.shape', inferred_images.shape)
 
-# %%
 visualize_images(inferred_images)
