@@ -55,7 +55,7 @@ def reverse_diffusion(model, params, simple_diffusion_obj, timesteps=1000, img_s
     _,_ = scan(loop_body, (x, init_key), jnp.arange(timesteps+1))
     return x
 
-def load_model_parameters(epoch_number, log_dir='./log'):
+def load_model_parameters(epoch_number, log_dir='./weights'):
     """
     Load the model parameters from a saved .flax file.
     
@@ -81,7 +81,7 @@ def load_model_parameters(epoch_number, log_dir='./log'):
 epoch_to_load = 2  # Adjust this to the specific epoch you need.
 
 # Load the model parameters.
-loaded_params = load_model_parameters(epoch_to_load, log_dir=f'{WORKING_DIR}/log')
+loaded_params = load_model_parameters(epoch_to_load, log_dir=f'{WORKING_DIR}/weights')
 # print('loaded_params', loaded_params)
 
 NUM_OF_IMAGES = 5

@@ -13,6 +13,7 @@ from unet import UNet
 from typing import Iterator
 from image_process import image_generator
 import argparse
+import random
 print(jax.devices())
 
 WORKING_DIR="./"
@@ -94,19 +95,18 @@ def mse_loss(pred, true):
 def train_one_epoch(simple_diffusion_obj: SimpleDiffusion, loader: Iterator[np.ndarray], total_time_steps: int, state: TrainState, batches_per_epoch: int) -> tuple[TrainState, float]:
     loss_record = MeanMetric()
     rng = jax.random.PRNGKey(0)
-    for batch in range(batches_per_epoch):
-        print(f'=============== batch {batch} ================')
+    # 矢量化forward_diffusion
+    vmap_forward_diffusion = jax.vmap(forward_diffusion, in_axes=(None, 0, 0, 0))
+
+    # 创建tqdm进度条
+    pbar = tqdm(range(batches_per_epoch), desc='Processing Batches')
+
+    for batch in pbar:
         x0s = next(loader)
         rng, loop_rng  = jax.random.split(rng)
         ts = jax.random.randint(loop_rng, (x0s.shape[0],), 1, total_time_steps)
-        # print('x0s.shape', x0s.shape)
-        # print('ts.shape', ts.shape)
 
         def compute_loss(params, simple_diffusion_obj, x0s, ts, dropout_rng):
-
-            # 矢量化forward_diffusion
-            vmap_forward_diffusion = jax.vmap(forward_diffusion, in_axes=(None, 0, 0, 0))
-            
             # 生成随机key
             keys = jax.random.split(dropout_rng, num=x0s.shape[0])
             # 应用矢量化的forward_diffusion
@@ -123,10 +123,9 @@ def train_one_epoch(simple_diffusion_obj: SimpleDiffusion, loader: Iterator[np.n
         loss, grads = grad_fn(state.params, simple_diffusion_obj, x0s, ts, dropout_rng)
         state = state.apply_gradients(grads=grads)
         loss_record.update(loss)
-        print(f'=============== loss {loss} ================')
+        pbar.set_postfix({'loss': f'{loss:.4f}'})
 
     mean_loss = loss_record.compute()
-    print('mean_loss', mean_loss)
     return state, mean_loss
 
 def train():
@@ -137,13 +136,22 @@ def train():
                                input_shape=(32,32,3))  
     del init_rng
 
-    num_files = 733
+    filenames = [f for f in os.listdir(f'{WORKING_DIR}/train_set') if f.endswith('.jpg') or f.endswith('.png')]
+    num_files = len(filenames)
     batches_per_epoch = num_files // TrainingConfig.BATCH_SIZE
     print('batches_per_epoch', batches_per_epoch)
+
     mean_loss_record = []
-    dataset = image_generator(f'{WORKING_DIR}/train_set', batch_size=TrainingConfig.BATCH_SIZE, num_files_limit=None)
-    for epoch in tqdm(range(TrainingConfig.NUM_EPOCHS), desc='Training Epochs'):
-        print('===================== epoch =',epoch)
+
+    # 创建或打开日志文件以记录损失
+    log_file_path = os.path.join(WORKING_DIR, 'loss_log.txt')
+    with open(log_file_path, 'w') as log_file:
+        log_file.write('#Epoch Mean Loss\n')  # 写入文件头
+
+    pbar = tqdm(range(1, TrainingConfig.NUM_EPOCHS+1), desc='Training Epochs')
+    for epoch in pbar:
+        random.shuffle(filenames)
+        dataset = image_generator(filenames, batch_size=TrainingConfig.BATCH_SIZE)
         state, mean_loss = train_one_epoch(
                                 simple_diffusion_obj=simple_diffusion_obj, 
                                 loader=dataset, 
@@ -151,11 +159,18 @@ def train():
                                 batches_per_epoch=batches_per_epoch,
                                 state=state)
         mean_loss_record.append(mean_loss)
-        # if epoch % 100 == 0:
-        if epoch:
+
+        pbar.set_postfix({'mean_loss': f'{mean_loss:.4f}'})
+
+        # 写入损失到日志文件
+        with open(log_file_path, 'a') as log_file:
+            log_file.write(f'{epoch} {mean_loss:.4f}\n')
+
+        if epoch % 100 == 0:
+        # if epoch:
             # 每100个epoch保存模型参数
             params = state.params
-            save_path = os.path.join(f'{WORKING_DIR}/log', f"{epoch}.flax")
+            save_path = os.path.join(f'{WORKING_DIR}/weights', f"{epoch}.flax")
             with open(save_path, 'wb') as f:
                 f.write(flax.serialization.to_bytes(params))
     return state

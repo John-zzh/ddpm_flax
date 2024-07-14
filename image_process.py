@@ -5,6 +5,9 @@ from typing import Iterator
 import numpy as np
 import jax.numpy as jnp
 import random
+from diffusion import forward_diffusion
+
+WORKING_DIR="./"
 
 def load_image(image_path, size=None):
     """加载图片，调整尺寸，并转换为numpy数组
@@ -25,20 +28,18 @@ def load_image(image_path, size=None):
 #             image_arrays.append(load_image(file_path, size=size))
 #     return np.stack(image_arrays)  # 使用 np.stack 确保能够正确地形成一个多维数组
 
-def image_generator(directory_path, size=(32, 32), batch_size=20, num_files_limit=None) -> Iterator[jnp.ndarray]:
-    filenames = [f for f in os.listdir(directory_path) if f.endswith('.jpg') or f.endswith('.png')]
+def image_generator(filenames, size=(32, 32), batch_size=20, num_files_limit=None) -> Iterator[jnp.ndarray]:
+    # filenames = [f for f in os.listdir(directory_path) if f.endswith('.jpg') or f.endswith('.png')]
     num_files = len(filenames)
     if num_files_limit:
         num_files = num_files_limit
         filenames = filenames[:num_files]
 
     def finite_generator():
-        for _ in range(1000):
-            random.shuffle(filenames)  # 打乱文件名的顺序
-            for i in range(0, num_files, batch_size):
-                batch_filenames = filenames[i:i + batch_size]
-                batch_images = [load_image(os.path.join(directory_path, f), size=None) for f in batch_filenames]
-                yield jnp.stack(batch_images)
+        for i in range(0, num_files, batch_size):
+            batch_filenames = filenames[i:i + batch_size]
+            batch_images = [load_image(f'{WORKING_DIR}/train_set/{f}') for f in batch_filenames]
+            yield jnp.stack(batch_images)
     return finite_generator()
 
 def inverse_transform(image):
@@ -62,7 +63,7 @@ def visualize_images(images):
 def show_vague_images():
     
     specific_timesteps = [0, 10, 50, 100, 150, 200, 250, 300, 400, 600, 800, 999]
-    example_dataset = image_generator(directory_path, batch_size=5)
+    example_dataset = image_generator('./train_set', batch_size=5)
     flattened_dataset = next(example_dataset)
     # num_pictures = flattened_dataset.shape[0]
     print('flattened_dataset.shape', flattened_dataset.shape)
