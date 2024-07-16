@@ -21,7 +21,7 @@ def reverse_diffusion(model, params, simple_diffusion_obj, timesteps=1000, img_s
         # print('i=', i)
         # print('val=', val)
         x, key = val
-        time_step = timesteps - i - 1
+        time_step = timesteps - i 
         # print('time_step', time_step)
         key, subkey = jax.random.split(key)
         # noise = jax.random.normal(subkey, x.shape) if time_step > 1 else jnp.zeros_like(x)
@@ -52,7 +52,7 @@ def reverse_diffusion(model, params, simple_diffusion_obj, timesteps=1000, img_s
     '''
 
     # print(jnp.arange(timesteps))
-    _,_ = scan(loop_body, (x, init_key), jnp.arange(timesteps+1))
+    _,_ = scan(loop_body, (x, init_key), jnp.arange(timesteps))
     return x
 
 def load_model_parameters(epoch_number, log_dir='./weights'):
@@ -78,13 +78,13 @@ def load_model_parameters(epoch_number, log_dir='./weights'):
     return params
 
 # Specify the epoch number of the model you want to load.
-epoch_to_load = 2  # Adjust this to the specific epoch you need.
+epoch_to_load = 800  # Adjust this to the specific epoch you need.
 
 # Load the model parameters.
 loaded_params = load_model_parameters(epoch_to_load, log_dir=f'{WORKING_DIR}/weights')
 # print('loaded_params', loaded_params)
 
-NUM_OF_IMAGES = 5
+NUM_OF_IMAGES = 10
 
 inferred_images = reverse_diffusion(model=model, 
                                     params=loaded_params, 
