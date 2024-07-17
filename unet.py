@@ -119,7 +119,7 @@ class ResnetBlock(nn.Module):
     apply_attention: bool = False
 
     @nn.compact
-    def __call__(self, x, t, train: bool = True):
+    def __call__(self, x, t, train: bool = True, dropout_rng=None):
         # Group 1
         # print('x.shape', x.shape)
         h = nn.GroupNorm(num_groups=8)(x)
@@ -141,9 +141,9 @@ class ResnetBlock(nn.Module):
         h = nn.GroupNorm(num_groups=8)(h)
         h = nn.silu(h)
 
-        # dropout_rng = self.make_rng('dropout') if train else None
-        # print(' dropout_rng =', dropout_rng)
-        # h = nn.Dropout(rate=self.dropout_rate, deterministic=not train)(h, rng=dropout_rng)
+        # dropout_rng = self.make_rng('dropout')  else None
+
+        h = nn.Dropout(rate=self.dropout_rate, deterministic=not train)(h, rng=dropout_rng)
         h = nn.Conv(features=self.out_channels, kernel_size=(3, 3), strides=(1, 1), padding='SAME')(h)
 
         # Match input channels to output if necessary
@@ -192,7 +192,7 @@ class UNet(nn.Module):
     time_multiple: int = 4
 
     @nn.compact
-    def __call__(self, x, t):
+    def __call__(self, x, t, train: bool = True, dropout_rng=None):
         time_emb_dims_exp = self.base_channels * self.time_multiple # 512
         time_emb = SinusoidalPositionEmbeddings(time_emb_dims=self.base_channels, time_emb_dims_exp=time_emb_dims_exp)(t)
 
@@ -205,7 +205,10 @@ class UNet(nn.Module):
             out_channels = self.base_channels * self.base_channels_multiples[i]
             # out_channels = 128 * (1, 2, 4, 8) = (128, 256, 512, 1024)
             for _ in range(self.num_res_blocks):
-                h = ResnetBlock(in_channels, out_channels, self.dropout_rate, apply_attention=self.apply_attention[i])(h, time_emb)
+                h = ResnetBlock(in_channels, 
+                            out_channels, 
+                            self.dropout_rate, 
+                            apply_attention=self.apply_attention[i])(h, time_emb, train=train, dropout_rng=dropout_rng)
                 in_channels = out_channels
             skips.append(h)
             if i < len(self.base_channels_multiples) - 1:
@@ -214,7 +217,10 @@ class UNet(nn.Module):
 
         # Bottleneck
         for _ in range(2):
-            h = ResnetBlock(in_channels, in_channels, self.dropout_rate, apply_attention=True)(h, time_emb)
+            h = ResnetBlock(in_channels, 
+                            in_channels, 
+                            self.dropout_rate, 
+                            apply_attention=True)(h, time_emb, train=train, dropout_rng=dropout_rng)
 
         # Decoder
         for i in reversed(range(len(self.base_channels_multiples))):
@@ -224,7 +230,10 @@ class UNet(nn.Module):
             skip_connection = skips.pop()
             h = jnp.concatenate([h, skip_connection], axis=-1)
             for _ in range(self.num_res_blocks + 1):
-                h = ResnetBlock(in_channels + out_channels, out_channels, self.dropout_rate, apply_attention=self.apply_attention[i])(h, time_emb)
+                h = ResnetBlock(in_channels + out_channels, 
+                                out_channels, 
+                                self.dropout_rate, 
+                                apply_attention=self.apply_attention[i])(h, time_emb, train=train, dropout_rng=dropout_rng)
                 in_channels = out_channels
 
         # Final layer

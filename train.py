@@ -84,12 +84,7 @@ def mse_loss(pred, true):
 
 # @jax.jit
 def compute_loss(params, state, xts, gt_noise, ts, dropout_rng):
-    # 生成随机key
-    # keys = jax.random.split(dropout_rng, num=x0s.shape[0])
-    # 应用矢量化的forward_diffusion
-    # xts, gt_noise = vmap_forward_diffusion(simple_diffusion_obj, x0s, ts, keys)
-    
-    pred_noise = state.apply_fn({'params': params, 'rngs': {'dropout': dropout_rng}}, xts, ts)
+    pred_noise = state.apply_fn({'params': params, 'rngs': {'dropout': dropout_rng}}, xts, ts, train=True, dropout_rng=dropout_rng)
     loss = mse_loss(gt_noise, pred_noise)
     return loss
 
@@ -108,7 +103,7 @@ def train_one_epoch(simple_diffusion_obj: SimpleDiffusion, loader: Iterator[np.n
         ts = jax.random.randint(loop_rng, (x0s.shape[0],), 1, total_time_steps)
 
         '''对损失函数进行自动微分，计算关于损失梯度。'''
-        dropout_rng = jax.random.split(rng, 2)[0] 
+        dropout_rng = jax.random.split(loop_rng, 2)[0] 
 
         keys = jax.random.split(dropout_rng, num=x0s.shape[0])
         # 应用矢量化的forward_diffusion
@@ -131,7 +126,6 @@ def load_model_parameters(epoch_number, log_dir, state):
     
     with open(file_path, 'rb') as f:
         params_bytes = f.read()
-        # 确保这里的`from_bytes`方法与你的模型框架兼容
         new_params = flax.serialization.from_bytes(state.params, params_bytes)
         # 返回更新参数后的状态
         return state.replace(params=new_params)
@@ -147,8 +141,11 @@ if __name__ == '__main__':
         dropout_rate            = ModelConfig.DROPOUT_RATE,
         time_multiple           = ModelConfig.TIME_EMB_MULT,
     )
+    key, dropout_key = jax.random.split(jax.random.PRNGKey(0))
 
-    params = unet_model.init(jax.random.PRNGKey(0), jnp.ones([1, *TrainingConfig.IMG_SHAPE]), jnp.ones([1]))['params']
+    params = unet_model.init({'params': key, 'dropout': dropout_key}, 
+                            jnp.ones([1, *TrainingConfig.IMG_SHAPE]), 
+                            jnp.ones([1]))['params']
     '''Unet is nn.module, need a key to init it.'''
 
     state = TrainState.create(apply_fn=unet_model.apply, 

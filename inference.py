@@ -8,7 +8,7 @@ from image_process import visualize_images
 import argparse
 
 input_shape=(32,32,3)
-init_params = model.init(jax.random.PRNGKey(0), jnp.ones([1, *input_shape]), jnp.ones([1]))  # 用适当的输入初始化
+init_params = model.init(jax.random.PRNGKey(0), jnp.ones([1, *input_shape]), jnp.ones([1]), training=False)  # 用适当的输入初始化
 
 def gen_args():
     def str2bool(str):
