@@ -1,7 +1,7 @@
 
 import jax, flax
 import jax.numpy as jnp
-from jax.lax import scan
+# from jax.lax import scan
 from train import model, simple_diffusion_obj, WORKING_DIR
 import os 
 from image_process import visualize_images
@@ -15,16 +15,14 @@ def reverse_diffusion(model, params, simple_diffusion_obj, timesteps=1000, img_s
                       num_images=5 ):
 
     init_key=jax.random.PRNGKey(0)
-    x = jax.random.normal(init_key, (num_images, *img_shape))
+    xt_normal_noise = jax.random.normal(init_key, (num_images, *img_shape))
 
-    def loop_body(val,i):
-        # print('i=', i)
-        # print('val=', val)
+    def loop_body(val:tuple, i:int):
+
         x, key = val
         time_step = timesteps - i 
         # print('time_step', time_step)
         key, subkey = jax.random.split(key)
-        # noise = jax.random.normal(subkey, x.shape) if time_step > 1 else jnp.zeros_like(x)
 
         def true_fun(_):
             return jax.random.normal(subkey, x.shape)
@@ -45,27 +43,17 @@ def reverse_diffusion(model, params, simple_diffusion_obj, timesteps=1000, img_s
             + jnp.sqrt(beta_t) * noise
         )
 
-        return (new_x, subkey), None
+        return (new_x, key), None
 
     '''result, final_state = jax.lax.scan(f, init, xs, length=None)
         result:是每一步调用 f 函数后返回的输出的集合。
     '''
 
-    # print(jnp.arange(timesteps))
-    _,_ = scan(loop_body, (x, init_key), jnp.arange(timesteps))
-    return x
+    final_state, _  = jax.lax.scan(loop_body, (xt_normal_noise, init_key), jnp.arange(timesteps))
+    return final_state[0]
 
 def load_model_parameters(epoch_number, log_dir='./weights'):
-    """
-    Load the model parameters from a saved .flax file.
-    
-    Args:
-    epoch_number (int): The epoch number to load the parameters for.
-    log_dir (str): Directory where the .flax files are stored.
-    
-    Returns:
-    dict: The loaded model parameters.
-    """
+
     file_path = os.path.join(log_dir, f"{epoch_number}.flax")
     print('params file path', file_path)
     if not os.path.exists(file_path):
@@ -77,8 +65,7 @@ def load_model_parameters(epoch_number, log_dir='./weights'):
         params = flax.serialization.from_bytes(init_params['params'], params_bytes)
     return params
 
-# Specify the epoch number of the model you want to load.
-epoch_to_load = 800  # Adjust this to the specific epoch you need.
+epoch_to_load = 2500  # Adjust this to the specific epoch you need.
 
 # Load the model parameters.
 loaded_params = load_model_parameters(epoch_to_load, log_dir=f'{WORKING_DIR}/weights')

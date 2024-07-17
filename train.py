@@ -29,6 +29,8 @@ def gen_args():
     parser = argparse.ArgumentParser(description='Davidson')
     parser.add_argument('--epoch',       type=int,   default=3,  help='number of epochs')
     parser.add_argument('--batch_size',  type=int,   default=50,  help='batch_size')
+    parser.add_argument('--retrain',  type=int,   default=None,  help='which epoch flax file')
+    parser.add_argument('--learning_rate',  type=float,   default=0.001,  help='learning rate')
 
     args = parser.parse_args()
     return args
@@ -128,13 +130,29 @@ def train_one_epoch(simple_diffusion_obj: SimpleDiffusion, loader: Iterator[np.n
     mean_loss = loss_record.compute()
     return state, mean_loss
 
+def load_model_parameters(epoch_number, log_dir, state):
+    file_path = os.path.join(log_dir, f"{epoch_number}.flax")
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"No saved model file found for epoch {epoch_number} at {file_path}")
+    
+    with open(file_path, 'rb') as f:
+        params_bytes = f.read()
+        # 确保这里的`from_bytes`方法与你的模型框架兼容
+        new_params = flax.serialization.from_bytes(state.params, params_bytes)
+        # 返回更新参数后的状态
+        return state.replace(params=new_params)
+
+
 def train():
     init_rng = jax.random.PRNGKey(0)
     state = create_train_state(rng=init_rng, 
                                model=model, 
-                               learning_rate=0.001, # Example learning rate
+                               learning_rate=args.learning_rate, # Example learning rate
                                input_shape=(32,32,3))  
     del init_rng
+
+    if args.retrain != None:
+        state = load_model_parameters(state=state, epoch_number=args.retrain, log_dir='./weights')
 
     filenames = [f for f in os.listdir(f'{WORKING_DIR}/train_set') if f.endswith('.jpg') or f.endswith('.png')]
     num_files = len(filenames)
@@ -166,11 +184,11 @@ def train():
         with open(log_file_path, 'a') as log_file:
             log_file.write(f'{epoch} {mean_loss:.4f}\n')
 
-        if epoch % 100 == 0:
+        if epoch % 50 == 0:
         # if epoch:
             # 每100个epoch保存模型参数
             params = state.params
-            save_path = os.path.join(f'{WORKING_DIR}/weights', f"{epoch}.flax")
+            save_path = os.path.join(f'{WORKING_DIR}/weights', f"{epoch + args.retrain}.flax")
             with open(save_path, 'wb') as f:
                 f.write(flax.serialization.to_bytes(params))
     return state

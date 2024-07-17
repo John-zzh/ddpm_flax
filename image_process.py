@@ -6,6 +6,7 @@ import numpy as np
 import jax.numpy as jnp
 import random
 from diffusion import forward_diffusion
+import random
 
 WORKING_DIR="./"
 
@@ -16,6 +17,10 @@ def load_image(image_path, size=None):
     with Image.open(image_path) as img:
         if size:
             img = img.resize(size)
+        if random.random() > 0.5:  # 50% 概率应用翻转
+            img = img.transpose(Image.FLIP_LEFT_RIGHT)
+        if random.random() > 0.5:  # 50% 概率应用旋转
+            img = img.rotate(random.choice([90, 180, 270]), expand=True)
         img_array = (np.array(img)/255.0 - 0.5)*2
         return img_array
 
@@ -42,18 +47,28 @@ def image_generator(filenames, size=(32, 32), batch_size=20, num_files_limit=Non
             yield jnp.stack(batch_images)
     return finite_generator()
 
-def inverse_transform(image):
-    """Convert tensors from [-1., 1.] to [0., 255.] """
-    return ((jnp.clip(image, -1, 1) + 1.0) / 2.0) * 255.0
+# def inverse_transform(image):
+#     """Convert tensors from [-1., 1.] to [0., 255.] and ensure type uint8 for correct image display."""
+#     # image = ((jnp.clip(image, -1, 1) + 1.0) / 2.0) * 255.0
+#     # return image.astype(jnp.uint8)  # Convert to uint8 to match expected [0, 255] integer range
+#     image = ((jnp.clip(image, -1, 1) + 1.0) / 2.0) 
+#     print(image)
+#     return image  # Convert to uint8 to match expected [0, 255] integer range
+
+def normalize_images(images):
+    normalized_images = (images - images.min()) / (images.max() - images.min())
+    return normalized_images
+
+
 
 def visualize_images(images):
-    """可视化数据集中的图片"""
-    plt.figure(figsize=(10, 3))
-    for i in range(images.shape[0]):
-        ax = plt.subplot(3, 10, i + 1)
-        img = inverse_transform(images[i,:,:,:]).astype(np.uint8)
-        plt.imshow(img)
-        plt.axis("off")
+    num_images = images.shape[0]
+    fig, axes = plt.subplots(1, num_images, figsize=(num_images * 2, 2))
+    if num_images == 1:
+        axes = [axes]
+    for i, ax in enumerate(axes):
+        ax.imshow(normalize_images(images[i]))
+        ax.axis('off')
     # plt.show()
     plt.savefig('inferred_images.png',dpi=300)
 
