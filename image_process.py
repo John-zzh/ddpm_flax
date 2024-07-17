@@ -21,9 +21,16 @@ def load_image(image_path, size=None):
             img = img.transpose(Image.FLIP_LEFT_RIGHT)
         if random.random() > 0.5:  # 50% 概率应用旋转
             img = img.rotate(random.choice([90, 180, 270]), expand=True)
+
+        # print('np.array(img).max(), np.array(img).min()', np.array(img).max(), np.array(img).min()) 
         img_array = (np.array(img)/255.0 - 0.5)*2
         return img_array
 
+def test_load_image():
+    img_array = load_image(f'{WORKING_DIR}/train_set/6953297_8576bf4ea3.jpg')
+    print('np.array(img).max(), np.array(img).min()', img_array.max(), img_array.min()) 
+
+test_load_image()
 # def load_images(directory_path, size=(32, 32)):
 #     """加载目录中所有图片并转换为具有统一尺寸的numpy数组的列表"""
 #     image_arrays = []
@@ -47,17 +54,20 @@ def image_generator(filenames, size=(32, 32), batch_size=20, num_files_limit=Non
             yield jnp.stack(batch_images)
     return finite_generator()
 
-# def inverse_transform(image):
-#     """Convert tensors from [-1., 1.] to [0., 255.] and ensure type uint8 for correct image display."""
-#     # image = ((jnp.clip(image, -1, 1) + 1.0) / 2.0) * 255.0
-#     # return image.astype(jnp.uint8)  # Convert to uint8 to match expected [0, 255] integer range
-#     image = ((jnp.clip(image, -1, 1) + 1.0) / 2.0) 
-#     print(image)
-#     return image  # Convert to uint8 to match expected [0, 255] integer range
+def inverse_transform(image):
+    """Convert tensors from [-1., 1.] to [0., 255.] and ensure type uint8 for correct image display."""
+    image = ((jnp.clip(image, -1, 1) + 1.0) / 2.0) * 255.0
+    return image.astype(jnp.uint8)  # Convert to uint8 to match expected [0, 255] integer range
+    # image = ((jnp.clip(image, -1, 1) + 1.0) / 2.0) 
+    # # print(image)
+    # return image  # Convert to uint8 to match expected [0, 255] integer range
 
-def normalize_images(images):
-    normalized_images = (images - images.min()) / (images.max() - images.min())
-    return normalized_images
+def normalize_image(image):
+    print('image.max(), image.min()', image.max(), image.min())
+    normalized_image = (image - image.min()) / (image.max() - image.min())
+    print('normalized_image.max(), normalized_image.min()', normalized_image.max(), normalized_image.min())
+    print()
+    return normalized_image
 
 
 
@@ -67,7 +77,8 @@ def visualize_images(images):
     if num_images == 1:
         axes = [axes]
     for i, ax in enumerate(axes):
-        ax.imshow(normalize_images(images[i]))
+        ax.imshow(normalize_image(images[i]))
+        # ax.imshow(inverse_transform(images[i]))
         ax.axis('off')
     # plt.show()
     plt.savefig('inferred_images.png',dpi=300)
