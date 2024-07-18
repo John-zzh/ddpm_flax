@@ -30,7 +30,7 @@ def test_load_image():
     img_array = load_image(f'{WORKING_DIR}/train_set/6953297_8576bf4ea3.jpg')
     print('np.array(img).max(), np.array(img).min()', img_array.max(), img_array.min()) 
 
-test_load_image()
+# test_load_image()
 # def load_images(directory_path, size=(32, 32)):
 #     """加载目录中所有图片并转换为具有统一尺寸的numpy数组的列表"""
 #     image_arrays = []

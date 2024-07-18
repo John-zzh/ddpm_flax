@@ -2,13 +2,13 @@
 import jax, flax
 import jax.numpy as jnp
 # from jax.lax import scan
-from train import model, simple_diffusion_obj, WORKING_DIR
+from train import unet_model, simple_diffusion_obj, WORKING_DIR
 import os 
 from image_process import visualize_images
 import argparse
 
 input_shape=(32,32,3)
-init_params = model.init(jax.random.PRNGKey(0), jnp.ones([1, *input_shape]), jnp.ones([1]), training=False)  # 用适当的输入初始化
+init_params = unet_model.init(jax.random.PRNGKey(0), jnp.ones([1, *input_shape]), jnp.ones([1]))  # 用适当的输入初始化
 
 def gen_args():
     def str2bool(str):
@@ -27,12 +27,13 @@ def gen_args():
 args = gen_args()
 
 '''使用一个已经训练好的模型来生成数据'''
-def reverse_diffusion(model, params, simple_diffusion_obj, num_timesteps=1000, img_shape=(32,32,3),
-                      num_images=5 ):
+def reverse_diffusion(unet_model, params, simple_diffusion_obj, num_timesteps=1000, img_shape=(32,32,3),
+                      num_images=20 ):
 
-    init_key=jax.random.PRNGKey(1)
+    init_key=jax.random.PRNGKey(0)
     xt_normal_noise = jax.random.normal(init_key, (num_images, *img_shape))
-
+    # xt_normal_noise = jax.random.normal(init_key, (num_images, *img_shape))
+    print('xt_normal_noise[0,:,:,:].shape', xt_normal_noise[0,:,:,:].shape)
     def loop_body(val:tuple, i:int):
 
         x, key = val
@@ -52,7 +53,7 @@ def reverse_diffusion(model, params, simple_diffusion_obj, num_timesteps=1000, i
         one_by_sqrt_alpha_t = simple_diffusion_obj.one_by_sqrt_alpha[time_step]
         sqrt_one_minus_alpha_cumulative_t = simple_diffusion_obj.sqrt_one_minus_alpha_cumulative[time_step]
 
-        predicted_noise = model.apply({"params": params}, x, time_step)
+        predicted_noise = unet_model.apply({"params": params}, x, time_step, train=False)
         new_x = (
             one_by_sqrt_alpha_t
             * (x - (beta_t / sqrt_one_minus_alpha_cumulative_t) * predicted_noise)
@@ -73,7 +74,7 @@ def load_model_parameters(epoch_number, log_dir='./weights'):
     file_path = os.path.join(log_dir, f"{epoch_number}.flax")
     print('params file path', file_path)
     if not os.path.exists(file_path):
-        raise FileNotFoundError(f"No saved model file found for epoch {epoch_number} at {file_path}")
+        raise FileNotFoundError(f"No saved unet_model file found for epoch {epoch_number} at {file_path}")
     
     with open(file_path, 'rb') as f:
         params_bytes = f.read()
@@ -83,13 +84,13 @@ def load_model_parameters(epoch_number, log_dir='./weights'):
 
 
 
-# Load the model parameters.
+# Load the unet_model parameters.
 loaded_params = load_model_parameters(args.epoch, log_dir=f'{WORKING_DIR}/weights')
 # print('loaded_params', loaded_params)
 
-NUM_OF_IMAGES = 10
+NUM_OF_IMAGES = 1
 
-inferred_images = reverse_diffusion(model=model, 
+inferred_images = reverse_diffusion(unet_model=unet_model, 
                                     params=loaded_params, 
                                     simple_diffusion_obj=simple_diffusion_obj,
                                     num_images=NUM_OF_IMAGES)

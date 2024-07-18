@@ -25,13 +25,11 @@ class SimpleDiffusion:
         beta_end = scale * 0.02
         return jnp.linspace(beta_start, beta_end, self.num_diffusion_timesteps, dtype=jnp.float32)
 
-def forward_diffusion(sd: SimpleDiffusion, x0: jnp.array, timestep: int, key=jax.random.PRNGKey(0)):
-    # print("forward_diffusion func: x0.shape", x0.shape)
-    # print("timestep:", timestep)
-    # print("sd.sqrt_alpha_cumulative.shape:", sd.sqrt_alpha_cumulative.shape)
+@jax.jit
+def forward_diffusion(sqrt_alpha_cumulative: list, sqrt_one_minus_alpha_cumulative: list, x0: jnp.array, timestep: int, key=jax.random.PRNGKey(0)):
 
-    cumulative_alpha = sd.sqrt_alpha_cumulative[timestep]
-    std_dev = sd.sqrt_one_minus_alpha_cumulative[timestep]  
+    cumulative_alpha = sqrt_alpha_cumulative[timestep]
+    std_dev = sqrt_one_minus_alpha_cumulative[timestep]  
     eps = jax.random.normal(key, x0.shape) # Noise
     '''sqrt_alpha_cumulative[timestep] 是按照期望的timestep取出对应的alpha'''
 

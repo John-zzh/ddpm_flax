@@ -14,7 +14,7 @@ from typing import Iterator
 from image_process import image_generator
 import argparse
 import random
-print(jax.devices())
+print('jax.devices()', jax.devices())
 
 WORKING_DIR="./"
 
@@ -58,6 +58,31 @@ class TrainingConfig:
 
 
 simple_diffusion_obj = SimpleDiffusion(num_diffusion_timesteps=1000, img_shape=(32,32,3))
+sqrt_alpha_cumulative = simple_diffusion_obj.sqrt_alpha_cumulative
+sqrt_one_minus_alpha_cumulative = simple_diffusion_obj.sqrt_one_minus_alpha_cumulative
+
+def load_model_parameters(epoch_number, log_dir, state):
+    file_path = os.path.join(log_dir, f"{epoch_number}.flax")
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"No saved weights file found for epoch {epoch_number} at {file_path}")
+    
+    with open(file_path, 'rb') as f:
+        params_bytes = f.read()
+        new_params = flax.serialization.from_bytes(state.params, params_bytes)
+        # 返回更新参数后的状态
+        return state.replace(params=new_params)
+
+
+unet_model = UNet(
+    input_channels          = TrainingConfig.IMG_SHAPE[-1],
+    output_channels         = TrainingConfig.IMG_SHAPE[-1],
+    base_channels           = ModelConfig.BASE_CH,
+    base_channels_multiples = ModelConfig.BASE_CH_MULT,
+    apply_attention         = ModelConfig.APPLY_ATTENTION,
+    dropout_rate            = ModelConfig.DROPOUT_RATE,
+    time_multiple           = ModelConfig.TIME_EMB_MULT,
+)
+
 
 class MeanMetric:
     def __init__(self):
@@ -75,73 +100,39 @@ class MeanMetric:
         self.total_loss = 0.0
         self.count = 0
 
-
-
-
 @jax.jit
-def mse_loss(pred, true):
-    return jnp.mean((pred - true) ** 2)
-
-# @jax.jit
-def compute_loss(params, state, xts, gt_noise, ts, dropout_rng):
-    pred_noise = state.apply_fn({'params': params, 'rngs': {'dropout': dropout_rng}}, xts, ts, train=True, dropout_rng=dropout_rng)
-    loss = mse_loss(gt_noise, pred_noise)
+def compute_loss(params, xts, ts, gt_noise, dropout_rng):
+    pred_noise = unet_model.apply({'params': params, 'rngs': {'dropout': dropout_rng}}, xts, ts, train=True, dropout_rng=dropout_rng)
+    loss = jnp.mean((pred_noise - gt_noise) ** 2)
     return loss
 
-def train_one_epoch(simple_diffusion_obj: SimpleDiffusion, loader: Iterator[np.ndarray], total_time_steps: int, state: TrainState, batches_per_epoch: int) -> tuple[TrainState, float]:
-    loss_record = MeanMetric()
-    rng = jax.random.PRNGKey(0)
-    # 矢量化forward_diffusion
-    vmap_forward_diffusion = jax.vmap(forward_diffusion, in_axes=(None, 0, 0, 0))
+@jax.jit
+def train_one_batch(x0s: jnp.ndarray, key: jnp.ndarray, state: TrainState,
+                    sqrt_alpha_cumulative: jnp.ndarray, 
+                    sqrt_one_minus_alpha_cumulative: jnp.ndarray,
+                    total_time_steps: int) -> tuple[TrainState, jnp.ndarray, jnp.ndarray]:
+    key, subkey = jax.random.split(key)
+    ts = jax.random.randint(subkey, (x0s.shape[0],), 1, total_time_steps)
 
-    # 创建tqdm进度条
-    pbar = tqdm(range(batches_per_epoch), desc='Processing Batches')
+    key, dropout_rng = jax.random.split(key)
+    keys = jax.random.split(dropout_rng, num=x0s.shape[0])
 
-    for batch in pbar:
-        x0s = next(loader)
-        rng, loop_rng  = jax.random.split(rng)
-        ts = jax.random.randint(loop_rng, (x0s.shape[0],), 1, total_time_steps)
+    vmap_forward_diffusion = jax.vmap(forward_diffusion, in_axes=(None, None, 0, 0, 0))
+    xts, gt_noise = vmap_forward_diffusion(sqrt_alpha_cumulative, sqrt_one_minus_alpha_cumulative, x0s, ts, keys)
 
-        '''对损失函数进行自动微分，计算关于损失梯度。'''
-        dropout_rng = jax.random.split(loop_rng, 2)[0] 
+    grad_fn = jax.value_and_grad(compute_loss)
+    loss, grads = grad_fn(state.params, xts, ts, gt_noise, dropout_rng)
 
-        keys = jax.random.split(dropout_rng, num=x0s.shape[0])
-        # 应用矢量化的forward_diffusion
-        xts, gt_noise = vmap_forward_diffusion(simple_diffusion_obj, x0s, ts, keys)
+    state = state.apply_gradients(grads=grads)
 
-        grad_fn = jax.value_and_grad(compute_loss)
+    return state, loss, key
 
-        loss, grads = grad_fn(state.params, state, xts, gt_noise, ts, dropout_rng)
-        state = state.apply_gradients(grads=grads)
-        loss_record.update(loss)
-        pbar.set_postfix({'loss': f'{loss:.4f}'})
 
-    mean_loss = loss_record.compute()
-    return state, mean_loss
-
-def load_model_parameters(epoch_number, log_dir, state):
-    file_path = os.path.join(log_dir, f"{epoch_number}.flax")
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"No saved weights file found for epoch {epoch_number} at {file_path}")
-    
-    with open(file_path, 'rb') as f:
-        params_bytes = f.read()
-        new_params = flax.serialization.from_bytes(state.params, params_bytes)
-        # 返回更新参数后的状态
-        return state.replace(params=new_params)
 
 if __name__ == '__main__':
-
-    unet_model = UNet(
-        input_channels          = TrainingConfig.IMG_SHAPE[-1],
-        output_channels         = TrainingConfig.IMG_SHAPE[-1],
-        base_channels           = ModelConfig.BASE_CH,
-        base_channels_multiples = ModelConfig.BASE_CH_MULT,
-        apply_attention         = ModelConfig.APPLY_ATTENTION,
-        dropout_rate            = ModelConfig.DROPOUT_RATE,
-        time_multiple           = ModelConfig.TIME_EMB_MULT,
-    )
-    key, dropout_key = jax.random.split(jax.random.PRNGKey(0))
+    # key, dropout_key = jax.random.split(jax.random.PRNGKey(0))
+    key = jax.random.PRNGKey(0)
+    dropout_key = jax.random.PRNGKey(1)
 
     params = unet_model.init({'params': key, 'dropout': dropout_key}, 
                             jnp.ones([1, *TrainingConfig.IMG_SHAPE]), 
@@ -158,6 +149,7 @@ if __name__ == '__main__':
     filenames = [f for f in os.listdir(f'{WORKING_DIR}/train_set') if f.endswith('.jpg') or f.endswith('.png')]
     num_files = len(filenames)
     batches_per_epoch = num_files // TrainingConfig.BATCH_SIZE
+    batches_per_epoch = int(batches_per_epoch)
     print('batches_per_epoch', batches_per_epoch)
 
     mean_loss_record = []
@@ -171,12 +163,27 @@ if __name__ == '__main__':
     for epoch in pbar:
         random.shuffle(filenames)
         dataset = image_generator(filenames, batch_size=TrainingConfig.BATCH_SIZE)
-        state, mean_loss = train_one_epoch(
-                                simple_diffusion_obj=simple_diffusion_obj, 
-                                loader=dataset, 
-                                total_time_steps=TrainingConfig.TIMESTEPS,
-                                batches_per_epoch=batches_per_epoch,
-                                state=state)
+
+        data_one_epoch = [next(dataset) for _ in range(batches_per_epoch)]
+
+        loss_record = MeanMetric()
+        # epoch_key, dropout_key = jax.random.split(key)
+        # key = epoch_key
+
+        vmap_forward_diffusion = jax.vmap(forward_diffusion, in_axes=(None,None, 0, 0, 0))
+
+        for batch in range(batches_per_epoch):
+            x0s = data_one_epoch[batch]
+            state, loss, key = train_one_batch(x0s=data_one_epoch[batch], 
+                                         key=key, 
+                                         state=state, 
+                                         sqrt_alpha_cumulative=sqrt_alpha_cumulative, 
+                                         sqrt_one_minus_alpha_cumulative=sqrt_one_minus_alpha_cumulative,
+                                         total_time_steps=TrainingConfig.TIMESTEPS)
+            loss_record.update(loss)
+            # pbar.set_postfix({'loss': f'{loss:.4f}'})
+
+        mean_loss = loss_record.compute()        
         mean_loss_record.append(mean_loss)
 
         pbar.set_postfix({'mean_loss': f'{mean_loss:.4f}'})
@@ -190,8 +197,8 @@ if __name__ == '__main__':
         if not os.path.exists(checkpoint_dir):
             os.makedirs(checkpoint_dir)
 
-        current_checkpoint_path = os.path.join(checkpoint_dir, f"{epoch + args.retrain}.flax")
-        previous_checkpoint_path = os.path.join(checkpoint_dir, f"{epoch + args.retrain - 1}.flax")
+        current_checkpoint_path = os.path.join(checkpoint_dir, f"{epoch}.flax")
+        previous_checkpoint_path = os.path.join(checkpoint_dir, f"{epoch-1}.flax")
 
         # 删除上一步的文件
         if os.path.exists(previous_checkpoint_path):
@@ -202,7 +209,7 @@ if __name__ == '__main__':
             f.write(flax.serialization.to_bytes(state.params))
 
         if epoch % 50 == 0:
-            save_path = os.path.join(f'{WORKING_DIR}/weights', f"{epoch + args.retrain}.flax")
+            save_path = os.path.join(f'{WORKING_DIR}/weights', f"{epoch}.flax")
             with open(save_path, 'wb') as f:
                 f.write(flax.serialization.to_bytes(state.params))
 
